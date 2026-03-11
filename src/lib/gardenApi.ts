@@ -81,6 +81,7 @@ export interface Order {
   integrator: string;
   version: string;
   solver_id: string;
+  status?: { status: string };
 }
 
 export async function fetchChains(): Promise<Chain[]> {

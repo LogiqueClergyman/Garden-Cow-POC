@@ -8,9 +8,13 @@
     "start": "next start"
   },
   "dependencies": {
+    "@cowprotocol/cow-sdk": "^7.4.2",
+    "@cowprotocol/sdk-viem-adapter": "^0.3.10",
+    "@nktkas/hyperliquid": "^0.31.0",
     "next": "14.2.20",
     "react": "^18",
-    "react-dom": "^18"
+    "react-dom": "^18",
+    "viem": "^2.47.1"
   },
   "devDependencies": {
     "@types/node": "^20",
