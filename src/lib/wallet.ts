@@ -18,6 +18,12 @@ const CHAIN_CONFIGS: Record<
     blockExplorerUrls: string[];
   }
 > = {
+  1: {
+    chainName: "Ethereum Mainnet",
+    rpcUrls: ["https://eth.llamarpc.com", "https://rpc.ankr.com/eth"],
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    blockExplorerUrls: ["https://etherscan.io"],
+  },
   11155111: {
     chainName: "Ethereum Sepolia",
     rpcUrls: ["https://rpc.sepolia.org", "https://ethereum-sepolia-rpc.publicnode.com"],

@@ -3,9 +3,10 @@
 import { useState } from "react";
 import SwapWidget from "@/components/SwapWidget";
 import ExtendedSwapWidget from "@/components/ExtendedSwapWidget";
+import MainnetSwapWidget from "@/components/MainnetSwapWidget";
 
 export default function Home() {
-  const [mode, setMode] = useState<"standard" | "extended">("standard");
+  const [mode, setMode] = useState<"standard" | "extended" | "mainnet">("standard");
 
   return (
     <main className="main-page">
@@ -59,10 +60,27 @@ export default function Home() {
           >
             Garden + CoW Routing
           </button>
+          <button 
+            onClick={() => setMode("mainnet")}
+            style={{
+              padding: "10px 20px",
+              borderRadius: "12px",
+              background: mode === "mainnet" ? "rgba(247,147,26,0.2)" : "transparent",
+              color: mode === "mainnet" ? "#f7931a" : "rgba(255,255,255,0.5)",
+              border: mode === "mainnet" ? "1px solid rgba(247,147,26,0.4)" : "1px solid transparent",
+              cursor: "pointer",
+              fontWeight: 600,
+              transition: "all 0.2s"
+            }}
+          >
+            ₿ Mainnet BTC→ERC20
+          </button>
         </div>
 
         {/* Active Widget */}
-        {mode === "standard" ? <SwapWidget /> : <ExtendedSwapWidget />}
+        {mode === "standard" && <SwapWidget />}
+        {mode === "extended" && <ExtendedSwapWidget />}
+        {mode === "mainnet" && <MainnetSwapWidget />}
       </div>
     </main>
   );
