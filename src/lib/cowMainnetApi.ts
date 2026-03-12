@@ -10,7 +10,7 @@
 import { TradingSdk, SupportedChainId, OrderKind, TradeParameters, OrderBookApi } from "@cowprotocol/cow-sdk";
 import { ViemAdapter } from "@cowprotocol/sdk-viem-adapter";
 import { createPublicClient, createWalletClient, custom } from "viem";
-import { mainnet } from "viem/chains";
+import { sepolia } from "viem/chains";
 
 // ─── Token List ───────────────────────────────────────────────────────────────
 
@@ -23,93 +23,42 @@ export interface CowMainnetToken {
 }
 
 /**
- * USDC on Ethereum mainnet — used as the pivot asset out of Garden.
- * Garden outputs USDC; CoW receives USDC as sellToken.
+ * WETH on Ethereum Sepolia — used as the pivot asset out of Garden.
+ * Garden outputs ETH, we wrap it to WETH, and CoW receives WETH as sellToken.
  */
-export const USDC_MAINNET: CowMainnetToken = {
-  symbol: "USDC",
-  name: "USD Coin",
-  address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-  decimals: 6,
-  icon: "https://garden.imgix.net/token-images/usdc.svg",
+export const WETH_TESTNET: CowMainnetToken = {
+  symbol: "WETH",
+  name: "Wrapped Ether",
+  address: "0xfff9976782d46cc05630d1f6ebab18b2324d6b14",
+  decimals: 18,
+  icon: "https://garden.imgix.net/token-images/weth.svg",
 };
 
 /**
- * Curated destination tokens for the CoW Protocol leg.
- *
- * Selection criteria:
- *   1. NOT natively supported by Garden Finance on mainnet
- *      (Garden supports: BTC, WBTC, WETH/ETH, USDC, USDT, cbBTC)
- *   2. Actively traded through CoW Protocol solvers — verified to have
- *      liquidity via CoW's price estimators (Uniswap v2/v3, Balancer, etc.)
- *
- * All addresses are Ethereum Mainnet (chainId 1).
+ * Curated destination tokens for the CoW Protocol leg on testnet.
  */
 export const COW_MAINNET_DEST_TOKENS: CowMainnetToken[] = [
   {
-    // CoW Protocol's own governance token — deepest native liquidity on CoW
     symbol: "COW",
     name: "CoW Protocol",
-    address: "0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB",
+    address: "0x0625aFB445C3B6B7B929342a04A22599fd5dBB59",
     decimals: 18,
-    icon: "https://raw.githubusercontent.com/cowprotocol/token-lists/main/src/public/images/0x34ecef7ea4561b86e06ddddba0bdf242ddf5cc38.png",
+    icon: "https://raw.githubusercontent.com/cowprotocol/token-lists/main/src/public/images/0x34ecef7ea4561b86e06ddddba0bdf242ddf5cc38.png"
   },
   {
-    // GNO — Gnosis DAO token, long-time CoW partner with active pairs
-    symbol: "GNO",
-    name: "Gnosis",
-    address: "0x6810e776880C02933D47DB1b9fc05908e5386b96",
+    symbol: "USDC",
+    name: "USD Coin",
+    address: "0xbe72E441BF55620febc26715db68d3494213D8Cb",
     decimals: 18,
-    icon: "https://assets.coingecko.com/coins/images/662/small/logo_square_simple_300px.png",
+    icon: "https://garden.imgix.net/token-images/usdc.svg"
   },
   {
-    // AAVE — deep liquidity across all DEX aggregators including CoW
-    symbol: "AAVE",
-    name: "Aave",
-    address: "0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9",
+    symbol: "UNI",
+    name: "Uniswap",
+    address: "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
     decimals: 18,
-    icon: "https://garden.imgix.net/token-images/aave.svg",
-  },
-  {
-    // CRV — Curve DAO token, heavily traded via CoW solvers
-    symbol: "CRV",
-    name: "Curve DAO Token",
-    address: "0xD533a949740bb3306d119CC777fa900bA034cd52",
-    decimals: 18,
-    icon: "https://assets.coingecko.com/coins/images/12124/small/Curve.png",
-  },
-  {
-    // LDO — Lido, large governance token with active CoW/DEX routing
-    symbol: "LDO",
-    name: "Lido DAO Token",
-    address: "0x5A98FcBEA516Cf06857215779Fd812CA3beF1B32",
-    decimals: 18,
-    icon: "https://assets.coingecko.com/coins/images/13573/small/Lido_DAO.png",
-  },
-  {
-    // ENS — Ethereum Name Service, used by ENS DAO on CoW for large trades
-    symbol: "ENS",
-    name: "Ethereum Name Service",
-    address: "0xC18360217D8F7Ab5e7c516566761Ea12Ce7F9D72",
-    decimals: 18,
-    icon: "https://assets.coingecko.com/coins/images/19785/small/acatxTm8_400x400.jpg",
-  },
-  {
-    // MKR — Maker governance, one of the oldest & most liquid DeFi tokens
-    symbol: "MKR",
-    name: "Maker",
-    address: "0x9f8F72aA9304c8B593d555F12eF6589cC3A579A2",
-    decimals: 18,
-    icon: "https://assets.coingecko.com/coins/images/1364/small/Mark_Maker.png",
-  },
-  {
-    // COMP — Compound governance token with established CoW routing
-    symbol: "COMP",
-    name: "Compound",
-    address: "0xc00e94Cb662C3520282E6f5717214004A7f26888",
-    decimals: 18,
-    icon: "https://assets.coingecko.com/coins/images/10775/small/COMP.png",
-  },
+    icon: "https://garden.imgix.net/token-images/uni.svg"
+  }
 ];
 
 
@@ -133,12 +82,12 @@ export async function getCowMainnetSdk(): Promise<{ sdk: TradingSdk; orderBook: 
   console.log("[CoW Mainnet] Initialising SDK for account:", account);
 
   const publicClient = createPublicClient({
-    chain: mainnet,
+    chain: sepolia,
     transport: custom(window.ethereum as any),
   });
 
   const walletClient = createWalletClient({
-    chain: mainnet,
+    chain: sepolia,
     transport: custom(window.ethereum as any),
     account,
   });
@@ -149,13 +98,13 @@ export async function getCowMainnetSdk(): Promise<{ sdk: TradingSdk; orderBook: 
   } as any);
 
   globalSdk = new TradingSdk(
-    { chainId: SupportedChainId.MAINNET, appCode: "garden-dapp" },
+    { chainId: SupportedChainId.SEPOLIA, appCode: "garden-dapp" },
     {},
     adapter
   );
 
-  globalOrderBook = new OrderBookApi({ chainId: SupportedChainId.MAINNET });
-  console.log("[CoW Mainnet] SDK initialised — chainId: MAINNET (1)");
+  globalOrderBook = new OrderBookApi({ chainId: SupportedChainId.SEPOLIA });
+  console.log("[CoW Mainnet] SDK initialised — chainId: SEPOLIA (11155111)");
 
   return { sdk: globalSdk, orderBook: globalOrderBook };
 }

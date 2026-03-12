@@ -49,6 +49,16 @@ export async function connectUnisatWallet(): Promise<string> {
   if (!accounts || accounts.length === 0) {
     throw new Error("No Bitcoin accounts found in Unisat Wallet.");
   }
+
+  try {
+    const net = await window.unisat!.getNetwork();
+    if (net === "livenet") {
+      await window.unisat!.switchNetwork("testnet");
+    }
+  } catch (e) {
+    console.warn("Failed to switch Unisat to testnet:", e);
+  }
+
   return accounts[0];
 }
 

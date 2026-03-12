@@ -30,13 +30,26 @@ import {
   fetchCowMainnetQuote,
   getCowMainnetOrderStatus,
   COW_MAINNET_DEST_TOKENS,
-  USDC_MAINNET,
+  WETH_TESTNET,
   type CowMainnetToken,
 } from "@/lib/cowMainnetApi";
 import { createPublicClient, createWalletClient, custom } from "viem";
-import { mainnet } from "viem/chains";
+import { sepolia } from "viem/chains";
 import { COW_PROTOCOL_VAULT_RELAYER_ADDRESS } from "@cowprotocol/cow-sdk";
 import OrderStatus from "./OrderStatus";
+
+// ─── WETH Deposit ABI ─────────────────────────────────────────────────────────
+const WETH_ABI = [
+  {
+    "constant": false,
+    "inputs": [],
+    "name": "deposit",
+    "outputs": [],
+    "payable": true,
+    "stateMutability": "payable",
+    "type": "function"
+  }
+] as const;
 
 // ─── ERC-20 approve ABI (minimal) ─────────────────────────────────────────────
 const ERC20_APPROVE_ABI = [
@@ -63,6 +76,7 @@ type Step =
   | "garden_signing"
   | "garden_initiating"
   | "garden_tracking"
+  | "wrapping_eth"         // wrapping ETH to WETH for CoW
   | "cow_quoting"
   | "cow_approving"        // USDC allowance for CoW vault relayer
   | "cow_signing"
@@ -76,8 +90,8 @@ interface ChainAsset {
 }
 
 // ─── BITCOIN ASSET CONSTANT ───────────────────────────────────────────────────
-// Garden uses "bitcoin:btc" as the canonical ID for native BTC.
-const BTC_ASSET_ID = "bitcoin:btc";
+// Garden uses "bitcoin_testnet:btc" as the canonical ID for testnet BTC.
+const BTC_ASSET_ID = "bitcoin_testnet:btc";
 
 // ─── Asset Selectors ──────────────────────────────────────────────────────────
 
@@ -107,11 +121,11 @@ function GardenAssetSelector({
 
   // Synthetic BTC chain/asset for the dropdown
   const btcChainAsset: ChainAsset = {
-    chain: { chain: "bitcoin", name: "Bitcoin", id: "bitcoin", icon: "https://garden.imgix.net/chain-images/bitcoin.svg", explorer_url: "https://mempool.space", assets: [] },
+    chain: { chain: "bitcoin_testnet", name: "Bitcoin Testnet", id: "bitcoin_testnet", icon: "https://garden.imgix.net/chain-images/bitcoin.svg", explorer_url: "https://mempool.space", assets: [] },
     asset: {
-      id: "bitcoin:btc",
-      name: "bitcoin:BTC",
-      chain: "bitcoin",
+      id: "bitcoin_testnet:btc",
+      name: "bitcoin_testnet:BTC",
+      chain: "bitcoin_testnet",
       icon: "https://garden.imgix.net/token-images/wbtc.svg",
       decimals: 8,
       min_amount: "10000",   // 0.0001 BTC — will be overwritten by Garden API real values
@@ -217,7 +231,7 @@ function CowMainnetTokenSelector({
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={token.icon} alt="" className="asset-icon" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
               <span className="dropdown-asset-name">{token.symbol}</span>
-              <span className="dropdown-chain">Ethereum Mainnet</span>
+              <span className="dropdown-chain">Ethereum Sepolia (CoW)</span>
             </button>
           ))}
         </div>
@@ -377,35 +391,36 @@ export default function MainnetSwapWidget() {
       try {
         // ── Step 1: Garden quote — fromAsset → ethereum:usdc ─────────────
         console.log(`[Mainnet Quote] Step 1: Garden quote ${fromAsset.asset.id} → ethereum:usdc, amount=${amount}`);
-        const gQuotes = await fetchQuote(fromAsset.asset.id, "ethereum:usdc", amount);
+        // ── Step 1: Garden quote — source → Native ETH on Sepolia ──────
+        const gQuotes = await fetchQuote(fromAsset.asset.id, "ethereum_sepolia:eth", amount);
 
-        if (gQuotes.length === 0) throw new Error("No Garden routes available to USDC.");
+        if (gQuotes.length === 0) throw new Error("No Garden routes available to ETH.");
         const bestGQuote = gQuotes[0];
 
         console.log("[Mainnet Quote] ✅ Garden quote received:", {
           sourceDisplay: bestGQuote.source.display,
           destDisplay: bestGQuote.destination.display,
           destAmountAtoms: bestGQuote.destination.amount,
-          destAmountHuman: (Number(bestGQuote.destination.amount) / 1e6).toFixed(6) + " USDC",
+          destAmountHuman: (Number(bestGQuote.destination.amount) / 1e18).toFixed(6) + " ETH",
           fee: (bestGQuote.fee / 100).toFixed(2) + "%",
           estimatedTime: bestGQuote.estimated_time + "s",
         });
 
         setGardenQuote(bestGQuote);
 
-        // ── Step 2: CoW quote — USDC → destination token ─────────────────
+        // ── Step 2: CoW quote — WETH → destination token ─────────────────
         console.log(
-          `[Mainnet Quote] Step 2: CoW quote USDC → ${toToken.symbol}`,
+          `[Mainnet Quote] Step 2: CoW quote WETH → ${toToken.symbol}`,
           `\n  sellAmount (atoms) : ${bestGQuote.destination.amount}`,
-          `\n  sellAmount (human) : ${(Number(bestGQuote.destination.amount) / 1e6).toFixed(6)} USDC`,
+          `\n  sellAmount (human) : ${(Number(bestGQuote.destination.amount) / 1e18).toFixed(6)} WETH`,
           `\n  buyToken address   : ${toToken.address}`
         );
 
         const cowRes = await fetchCowMainnetQuote(
-          USDC_MAINNET.address,
+          WETH_TESTNET.address,
           toToken.address,
-          bestGQuote.destination.amount,   // USDC atoms (6 dec)
-          USDC_MAINNET.decimals,
+          bestGQuote.destination.amount,   // WETH atoms (18 dec)
+          WETH_TESTNET.decimals,
           toToken.decimals
         );
 
@@ -459,20 +474,20 @@ export default function MainnetSwapWidget() {
 
     try {
       /* =====================================================================
-         PHASE 1: GARDEN SWAP  (Source → USDC on Ethereum Mainnet)
+         PHASE 1: GARDEN SWAP  (Source → ETH on Ethereum Sepolia)
          ===================================================================== */
-      console.log(`[Mainnet] Starting: ${from.asset.id} → ${to.symbol} via USDC pivot`);
+      console.log(`[Mainnet] Starting: ${from.asset.id} → ${to.symbol} via WETH pivot`);
 
       setStep("garden_creating");
       // For BTC source, sourceOwner is the Bitcoin address.
-      // destOwner is the EVM address that will receive USDC.
+      // destOwner is the EVM address that will receive ETH.
       const sourceOwner = isBtcSource ? btcAddr! : evmAddr;
       const orderResult = await createOrder(
         from.asset.id,
         sourceOwner,
         gQuote.source.amount,
-        "ethereum:usdc",
-        evmAddr,                        // EVM address receives USDC
+        "ethereum_sepolia:eth",
+        evmAddr,                        // EVM address receives ETH
         gQuote.destination.amount
       );
       currentGardenOrderId = orderResult.order_id;
@@ -484,8 +499,8 @@ export default function MainnetSwapWidget() {
         console.log("[Mainnet] ERC-20 approval required before Garden initiate");
         setStep("garden_approving");
 
-        const pubClient = createPublicClient({ chain: mainnet, transport: custom(window.ethereum as any) });
-        const wClient = createWalletClient({ chain: mainnet, transport: custom(window.ethereum as any), account: evmAddr as `0x${string}` });
+        const pubClient = createPublicClient({ chain: sepolia, transport: custom(window.ethereum as any) });
+        const wClient = createWalletClient({ chain: sepolia, transport: custom(window.ethereum as any), account: evmAddr as `0x${string}` });
         const fees = await pubClient.estimateFeesPerGas();
 
         const txHash = await wClient.sendTransaction({
@@ -598,31 +613,49 @@ export default function MainnetSwapWidget() {
         }, 5000);
       });
 
-      console.log("[Mainnet] Garden complete — USDC received. Moving to CoW…");
+      console.log("[Mainnet] Garden complete — ETH received. Proceeding to WETH wrapping…");
 
       /* =====================================================================
-         PHASE 2: COW PROTOCOL SWAP (USDC → Destination ERC-20 on Mainnet)
+         PHASE 1.5: WRAP ETH TO WETH
+         ===================================================================== */
+      setStep("wrapping_eth");
+      await switchNetwork(11155111); // Ensure we're on Sepolia
+
+      const sepPub = createPublicClient({ chain: sepolia, transport: custom(window.ethereum as any) });
+      const sepWallet = createWalletClient({ chain: sepolia, transport: custom(window.ethereum as any), account: evmAddr as `0x${string}` });
+
+      console.log("[Mainnet] Wrapping Native ETH to WETH for CoW…");
+      const wrapTxHash = await sepWallet.writeContract({
+        address: WETH_TESTNET.address as `0x${string}`,
+        abi: WETH_ABI,
+        functionName: "deposit",
+        value: BigInt(gQuote.destination.amount),
+        account: evmAddr as `0x${string}`,
+      });
+      console.log(`[Mainnet] \`deposit()\` wrap txHash: ${wrapTxHash}. Waiting for confirmation...`);
+      await sepPub.waitForTransactionReceipt({ hash: wrapTxHash });
+      console.log("[Mainnet] WETH wrapped successfully!");
+
+      /* =====================================================================
+         PHASE 2: COW PROTOCOL SWAP (WETH → Destination ERC-20 on Testnet)
          ===================================================================== */
       setStep("cow_quoting");
-      await switchNetwork(1); // Ensure we're on Ethereum mainnet
 
       const cowRes = await fetchCowMainnetQuote(
-        USDC_MAINNET.address,
+        WETH_TESTNET.address,
         to.address,
         gQuote.destination.amount,
-        USDC_MAINNET.decimals,
+        WETH_TESTNET.decimals,
         to.decimals
       );
-      console.log("[Mainnet] CoW mainnet quote refreshed");
+      console.log("[Mainnet] CoW testnet quote refreshed");
 
-      // Approve USDC to CoW Vault Relayer
+      // Approve WETH to CoW Vault Relayer
       setStep("cow_approving");
-      const relayerAddress = COW_PROTOCOL_VAULT_RELAYER_ADDRESS[1] || COW_PROTOCOL_VAULT_RELAYER_ADDRESS[100];
-      const mainPub = createPublicClient({ chain: mainnet, transport: custom(window.ethereum as any) });
-      const mainWallet = createWalletClient({ chain: mainnet, transport: custom(window.ethereum as any), account: evmAddr as `0x${string}` });
+      const relayerAddress = COW_PROTOCOL_VAULT_RELAYER_ADDRESS[11155111] || COW_PROTOCOL_VAULT_RELAYER_ADDRESS[100];
 
-      const approvalTx = await mainWallet.writeContract({
-        address: USDC_MAINNET.address as `0x${string}`,
+      const approvalTx = await sepWallet.writeContract({
+        address: WETH_TESTNET.address as `0x${string}`,
         abi: ERC20_APPROVE_ABI,
         functionName: "approve",
         args: [
@@ -631,8 +664,8 @@ export default function MainnetSwapWidget() {
         ],
         account: evmAddr as `0x${string}`,
       });
-      await mainPub.waitForTransactionReceipt({ hash: approvalTx });
-      console.log("[Mainnet] USDC approved to CoW Vault Relayer");
+      await sepPub.waitForTransactionReceipt({ hash: approvalTx });
+      console.log("[Mainnet] WETH approved to CoW Vault Relayer");
 
       // Submit CoW order
       setStep("cow_signing");
@@ -694,7 +727,7 @@ export default function MainnetSwapWidget() {
 
   // ── Derived UI state ───────────────────────────────────────────────────────
   const isBtcSource = fromAsset?.asset.id === BTC_ASSET_ID;
-  const isTracking = step === "garden_tracking" || step === "cow_tracking";
+  const isTracking = step === "garden_tracking" || step === "cow_tracking" || step === "wrapping_eth";
   const isLoading = step !== "idle" && step !== "quoted" && step !== "done" && step !== "error" && !isTracking;
 
   const stepLabel: Record<string, string> = {
@@ -851,7 +884,11 @@ export default function MainnetSwapWidget() {
               </span>
               <span>➔</span>
               <span className="route-step">
-                USDC<br /><small>Ethereum</small>
+                ETH (Native)<br /><small>Ethereum</small>
+              </span>
+              <span>➔</span>
+              <span className="route-step">
+                WETH<br /><small>Ethereum</small>
               </span>
               <span>➔</span>
               <span className="route-step" style={{ color: "#fff" }}>
@@ -866,9 +903,9 @@ export default function MainnetSwapWidget() {
               <span className="quote-val">{gardenQuote.source.display}</span>
             </div>
             <div className="quote-row">
-              <span className="quote-key">Intermediate (USDC)</span>
+              <span className="quote-key">Intermediate (ETH → WETH)</span>
               <span className="quote-val" style={{ color: "#aaa" }}>
-                {(Number(gardenQuote.destination.amount) / 1e6).toFixed(4)} USDC
+                {(Number(gardenQuote.destination.amount) / 1e18).toFixed(4)} ETH
               </span>
             </div>
             <div className="quote-row highlight">
@@ -883,8 +920,8 @@ export default function MainnetSwapWidget() {
               <span className="quote-val">{(gardenQuote.fee / 100).toFixed(2)}%{gardenQuote.fixed_fee !== "0" && ` + ${gardenQuote.fixed_fee} fixed`}</span>
             </div>
             <div className="quote-row small">
-              <span className="quote-key">CoW Network Fee</span>
-              <span className="quote-val">{(Number(cowQuoteData.quoteResults.quoteResponse.quote.feeAmount) / 1e6).toFixed(4)} USDC</span>
+              <span className="quote-key">CoW Est. Network Fee</span>
+              <span className="quote-val">{(Number(cowQuoteData.quoteResults.quoteResponse.quote.feeAmount) / 1e18).toFixed(6)} WETH</span>
             </div>
             <div className="quote-row small">
               <span className="quote-key">Est. time</span>
@@ -932,8 +969,8 @@ export default function MainnetSwapWidget() {
         {/* Live tracking timeline */}
         {isTracking && (
           <div className="tracking-timeline" style={{ marginTop: "20px", padding: "15px", background: "rgba(0,0,0,0.3)", borderRadius: "12px" }}>
-            <div style={{ marginBottom: "10px", color: step === "garden_tracking" ? "#f7931a" : "#4cd137", fontWeight: 600 }}>
-              {step === "garden_tracking" ? "Phase 1: Garden Cross-Chain (→ USDC)" : "Phase 2: CoW Protocol (USDC → " + toToken?.symbol + ")"}
+            <div style={{ marginBottom: "10px", color: step === "garden_tracking" || step === "wrapping_eth" ? "#f7931a" : "#4cd137", fontWeight: 600 }}>
+              {step === "garden_tracking" ? "Phase 1: Garden Cross-Chain (→ ETH)" : step === "wrapping_eth" ? "Phase 1.5: Wrapping ETH to WETH" : "Phase 2: CoW Protocol (WETH → " + toToken?.symbol + ")"}
             </div>
 
             {step === "garden_tracking" && gardenOrderData && (
